@@ -1,22 +1,20 @@
+#!/usr/bin/env python
+
 from __future__ import division
 from __future__ import print_function
 
 import argparse
-from random import sample, randint, random
-from time import time
-from tqdm import trange
+import random
+import time
 import sys
+import os
 
 import numpy as np
 import cv2
 import tensorflow as tf
 
-from env_lab import EnvLab
-from env_vizdoom import EnvVizDoom
-
 def MakeDir(path):
     try:
-        import os
         os.makedirs(path)
     except:
         pass
@@ -27,34 +25,39 @@ train = True
 test_display = True
 test_write_video = False
 path_work_dir = "~/lab/python/"
-path_vizdoom = "~/ViZDoom/"
+vizdoom_path = "~/ViZDoom/"
+vizdoom_scenario = vizdoom_path + "scenarios/simpler_basic.wad"
 
 # Lab parameters.
 if (lab):
+    from env_lab import EnvLab
+
     learning_rate = 0.00025  # 0.001
     discount_factor = 0.99
-    iteration_num = int(5e5)  # int(1e6)
+    step_num = int(5e5)  # int(1e6)
     replay_memory_size = int(1e6)
     replay_memory_batch_size = 64
 
     # Exploration rate.
     start_eps = 1.0
     end_eps = 0.1
-    eps_decay_iter = 0.33 * iteration_num
+    eps_decay_iter = 0.33 * step_num
 
     frame_repeat = 10  # 4
     channels = 3
     resolution = (40, 40) + (channels,)  # Original: 240x320
 
-    model_save_path = path_work_dir + "model_lab/"
-    save_each = 0.01 * iteration_num
-    iter_to_load = 100
+    model_path = path_work_dir + "model_lab_dqn/"
+    save_each = 0.01 * step_num
+    step_load = 100
 
 # Vizdoom parameters.
 if (not lab):
+    from env_vizdoom import EnvVizDoom
+
     learning_rate = 0.00025
     discount_factor = 0.99
-    iteration_num = int(5e4)
+    step_num = int(5e4)
     replay_memory_size = int(1e5)
     replay_memory_batch_size = 64
 
@@ -64,27 +67,55 @@ if (not lab):
 
     start_eps = 1.0
     end_eps = 0.1
-    eps_decay_iter = 0.33 * iteration_num
+    eps_decay_iter = 0.33 * step_num
 
-    model_save_path = path_work_dir + "model_vizdoom/"
-    save_each = 0.1 * iteration_num
-    iter_to_load = 10
+    model_path = path_work_dir + "model_vizdoom_dqn/"
+    save_each = 0.01 * step_num
+    step_load = 100
 
-MakeDir(model_save_path)
-model_save_name = model_save_path + "dqn"
+MakeDir(model_path)
+model_name = model_path + "dqn"
 
 # Global variables.
 env = None
-agent = None
+
+def PrintStat(elapsed_time, step, step_num, train_scores):
+    steps_per_s = 1.0 * step / elapsed_time
+    steps_per_m = 60.0 * step / elapsed_time
+    steps_per_h = 3600.0 * step / elapsed_time
+    steps_remain = step_num - step
+    remain_h = int(steps_remain / steps_per_h)
+    remain_m = int((steps_remain - remain_h * steps_per_h) / steps_per_m)
+    remain_s = int((steps_remain - remain_h * steps_per_h - remain_m * steps_per_m) / steps_per_s)
+    elapsed_h = int(elapsed_time / 3600)
+    elapsed_m = int((elapsed_time - elapsed_h * 3600) / 60)
+    elapsed_s = int((elapsed_time - elapsed_h * 3600 - elapsed_m * 60))
+    print("{}% | Steps: {}/{}, {:.2f}M step/h, {:02}:{:02}:{:02}/{:02}:{:02}:{:02}".format(
+        100.0 * step / step_num, step, step_num, steps_per_h / 1e6,
+        elapsed_h, elapsed_m, elapsed_s, remain_h, remain_m, remain_s), file=sys.stderr)
+
+    mean_train = 0
+    std_train = 0
+    min_train = 0
+    max_train = 0
+    if (len(train_scores) > 0):
+        train_scores = np.array(train_scores)
+        mean_train = train_scores.mean()
+        std_train = train_scores.std()
+        min_train = train_scores.min()
+        max_train = train_scores.max()
+    print("Episodes: {} Rewards: mean: {:.2f}, std: {:.2f}, min: {:.2f}, max: {:.2f}".format(
+        len(train_scores), mean_train, std_train, min_train, max_train), file=sys.stderr)
 
 def Preprocess(img):
     #cv2.imshow("frame-train", img)
     #cv2.waitKey(20)
-    #img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if (channels == 1):
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = cv2.resize(img, (resolution[1], resolution[0]))
     #cv2.imshow("frame-train", img)
     #cv2.waitKey(200)
-    return img
+    return np.reshape(img, resolution)
 
 class ReplayMemory(object):
     def __init__(self, capacity):
@@ -100,7 +131,6 @@ class ReplayMemory(object):
 
     def Add(self, s, action, isterminal, reward):
 
-        #self.s[self.pos, :, :, 0] = s # gray
         self.s[self.pos, ...] = s
         self.a[self.pos] = action
         self.isterminal[self.pos] = isterminal
@@ -111,7 +141,7 @@ class ReplayMemory(object):
 
     def Get(self, sample_size):
 
-        idx = sample(xrange(0, self.size-2), sample_size)
+        idx = random.sample(xrange(0, self.size-2), sample_size)
         idx2 = []
         for i in idx:
             idx2.append(i + 1)
@@ -123,16 +153,16 @@ class Model(object):
         self.session = session
 
         # Create the input.
-        self.s_ = tf.placeholder(tf.float32, [None] + list(resolution))
-        self.q_ = tf.placeholder(tf.float32, [None, actions_count])
+        self.s_ = tf.placeholder(shape=[None] + list(resolution), dtype=tf.float32)
+        self.q_ = tf.placeholder(shape=[None, actions_count], dtype=tf.float32)
 
         # Create the network.
-        self.conv1 = tf.contrib.layers.conv2d(self.s_, num_outputs=8, kernel_size=[3, 3], stride=[2, 2])
-        self.conv2 = tf.contrib.layers.conv2d(self.conv1, num_outputs=16, kernel_size=[3, 3], stride=[2, 2])
-        self.conv2_flat = tf.contrib.layers.flatten(self.conv2)
-        self.fc1 = tf.contrib.layers.fully_connected(self.conv2_flat, num_outputs=128)
+        conv1 = tf.contrib.layers.conv2d(self.s_, num_outputs=8, kernel_size=[3, 3], stride=[2, 2])
+        conv2 = tf.contrib.layers.conv2d(conv1, num_outputs=16, kernel_size=[3, 3], stride=[2, 2])
+        conv2_flat = tf.contrib.layers.flatten(conv2)
+        fc1 = tf.contrib.layers.fully_connected(conv2_flat, num_outputs=128)
 
-        self.q = tf.contrib.layers.fully_connected(self.fc1, num_outputs=actions_count, activation_fn=None)
+        self.q = tf.contrib.layers.fully_connected(fc1, num_outputs=actions_count, activation_fn=None)
         self.action = tf.argmax(self.q, 1)
 
         self.loss = tf.losses.mean_squared_error(self.q, self.q_)
@@ -140,10 +170,10 @@ class Model(object):
         self.optimizer = tf.train.RMSPropOptimizer(learning_rate)
         self.train_step = self.optimizer.minimize(self.loss)
 
-    def Learn(self, s, q):
+    def Learn(self, state, q):
 
-        s = s.astype(np.float32)
-        l, _ = self.session.run([self.loss, self.train_step], feed_dict={self.s_: s, self.q_: q})
+        state = state.astype(np.float32)
+        l, _ = self.session.run([self.loss, self.train_step], feed_dict={self.s_: state, self.q_: q})
         return l
 
     def GetQ(self, state):
@@ -161,7 +191,12 @@ class Agent(object):
 
     def __init__(self, num_actions):
 
-        self.session = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        config.log_device_placement = False
+        config.allow_soft_placement = True
+
+        self.session = tf.Session(config=config)
 
         self.model = Model(self.session, num_actions)
         self.memory = ReplayMemory(replay_memory_size)
@@ -170,7 +205,7 @@ class Agent(object):
 
         self.saver = tf.train.Saver(max_to_keep=1000)
         if (load_model):
-            model_name_curr = model_save_name + "_{:04}".format(iter_to_load)
+            model_name_curr = model_name + "_{:04}".format(step_load)
             print("Loading model from: ", model_name_curr)
             self.saver.restore(self.session, model_name_curr)
         else:
@@ -191,8 +226,8 @@ class Agent(object):
 
     def GetAction(self, state):
 
-        if (random() <= 0.05):
-            a = randint(0, self.num_actions-1)
+        if (random.random() <= 0.05):
+            a = random.randint(0, self.num_actions-1)
         else:
             a = self.model.GetAction(state)
 
@@ -208,8 +243,8 @@ class Agent(object):
         else:
             eps = end_eps
 
-        if (random() <= eps):
-            a = randint(0, self.num_actions-1)
+        if (random.random() <= eps):
+            a = random.randint(0, self.num_actions-1)
         else:
             a = self.model.GetAction(s)
 
@@ -223,62 +258,45 @@ class Agent(object):
     def Train(self):
 
         print("Starting training.")
-        time_start = time()
-        train_episodes_finished = 0
+        start_time = time.time()
         train_scores = []
         env.Reset()
-        for iter in trange(1, iteration_num+1):
-            self.Step(iter)
+        for step in xrange(1, step_num+1):
+            self.Step(step)
             if (not env.IsRunning()):
-                train_episodes_finished += 1
                 train_scores.append(self.rewards)
                 self.rewards = 0
                 env.Reset()
 
-            if (iter % save_each == 0):
-                model_name_curr = model_save_name + "_{:04}".format(int(iter / save_each))
+            if (step % save_each == 0):
+                model_name_curr = model_name + "_{:04}".format(int(step / save_each))
                 print("\nSaving the network weigths to:", model_name_curr, file=sys.stderr)
                 self.saver.save(self.session, model_name_curr)
 
-                print("Episodes: {}".format(train_episodes_finished), file=sys.stderr)
+                PrintStat(time.time() - start_time, step, step_num, train_scores)
 
-                mean_train = 0
-                std_train = 0
-                min_train = 0
-                max_train = 0
-                if (len(train_scores) > 0):
-                    train_scores = np.array(train_scores)
-                    mean_train = train_scores.mean()
-                    std_train = train_scores.std()
-                    min_train = train_scores.min()
-                    max_train = train_scores.max()
-                print("Results: mean: {}, std: {}, min: {}, max: {}".format(mean_train, std_train, min_train, max_train), file=sys.stderr)
-
-                train_episodes_finished = 0
                 train_scores = []
 
-        print("Training time: {} hours".format((time() - time_start) / 3600))
         env.Reset()
 
-def Test():
+def Test(agent):
     if (test_write_video):
         size = (640, 480)
         fps = 30.0 #/ frame_repeat
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # cv2.cv.CV_FOURCC(*'XVID')
         out_video = cv2.VideoWriter(path_work_dir + "test.avi", fourcc, fps, size)
 
     reward_total = 0
     num_episodes = 30
-    while (True):
+    while (num_episodes != 0):
         if (not env.IsRunning()):
             env.Reset()
             print("Total reward: {}".format(reward_total))
             reward_total = 0
             num_episodes -= 1
-            if (num_episodes==0):
-                break
 
         state_raw = env.Observation()
+
         state = Preprocess(state_raw)
         action = agent.GetAction(state)
 
@@ -291,24 +309,31 @@ def Test():
             if (test_write_video):
                 out_video.write(state_raw)
 
-            reward = env.Act(action, 1)  #frame_repeat)
+            reward = env.Act(action, 1)
             reward_total += reward
 
-            state_raw = env.Observation()
             if (not env.IsRunning()):
                 break
 
+            state_raw = env.Observation()
+
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu", help="the GPU to use")
+    args = parser.parse_args()
+
+    if (args.gpu):
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+
     if (lab):
-        env = EnvLab(40, 40, 60, "seekavoid_arena_01")
+        env = EnvLab(80, 80, 60, "seekavoid_arena_01")
     else:
-        env = EnvVizDoom(path_vizdoom + "scenarios/simpler_basic.cfg")
+        env = EnvVizDoom(vizdoom_scenario)
 
     agent = Agent(env.NumActions())
 
     if (train):
         agent.Train()
 
-    Test()
-
+    Test(agent)

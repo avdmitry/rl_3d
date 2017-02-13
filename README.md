@@ -1,20 +1,20 @@
-### Reinforcement learning in 3D.
+### Reinforcement learning in 3D
 Implemented base DQN [1] algorithm for ViZDoom [2] and DeepMind Lab [3] environments.
 
 Small network on small screen resolution trained relatively fast on simple maps (on 1 GPU):
 * ~ 5 minutes on ViZDoom map *simpler_basic*.
 * ~ 5 hours on DeepMind Lab map *seekavoid_arena_01*.
 
-**ViZDoom map simpler_basic.**
+**ViZDoom map simpler_basic**
 
 [![ViZDoom map simpler_basic](http://i.imgur.com/zInpPnW.png)](https://youtu.be/mgY-G8rl9O4)
 
-**DeepMind Lab map seekavoid_arena_01.**
+**DeepMind Lab map seekavoid_arena_01**
 
-*Video coming soon.*
+[![ViZDoom map simpler_basic](http://i.imgur.com/nDLoaNW.png)](https://youtu.be/G41s4FQPIX4)
 
 
-### Main Dependencies.
+### Main Dependencies
 
 * numpy
 * [opencv](https://github.com/opencv/opencv)
@@ -23,7 +23,7 @@ Small network on small screen resolution trained relatively fast on simple maps 
 * [DeepMind Lab](https://github.com/deepmind/lab)
 
 
-### References.
+### References
 [1] Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Alex Graves, Ioannis Antonoglou, Daan Wierstra, Martin Riedmiller. Playing Atari with Deep Reinforcement Learning, 2013.
 
 [2] Michał Kempka, Marek Wydmuch, Grzegorz Runc, Jakub Toczek, Wojciech Jaśkowski. ViZDoom: A Doom-based AI Research Platform for Visual Reinforcement Learning, 2016.

@@ -95,4 +95,3 @@ class EnvLab(object):
             self.action[self.indices["CROUCH"]] = 1"""
 
         return np.clip(self.action, self.mins, self.maxs).astype(np.intc)
-
