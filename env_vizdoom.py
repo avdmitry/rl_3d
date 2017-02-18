@@ -47,6 +47,7 @@ class EnvVizDoom(object):
         self.game.new_episode()
 
     def Act(self, action, frame_repeat):
+        action = self.MapActions(action)
         return self.game.make_action(self.actions[action], frame_repeat)
 
     def IsRunning(self):

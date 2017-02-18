@@ -43,6 +43,7 @@ class EnvLab(object):
         self.env.reset()
 
     def Act(self, action, frame_repeat):
+        action = self.MapActions(action)
         return self.env.step(action, num_steps=frame_repeat)
 
     def IsRunning(self):

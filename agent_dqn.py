@@ -24,7 +24,7 @@ load_model = False
 train = True
 test_display = True
 test_write_video = False
-path_work_dir = "~/lab/python/"
+path_work_dir = "~/rl_3d/"
 vizdoom_path = "~/ViZDoom/"
 vizdoom_scenario = vizdoom_path + "scenarios/simpler_basic.wad"
 
@@ -231,7 +231,7 @@ class Agent(object):
         else:
             a = self.model.GetAction(state)
 
-        return env.MapActions(a)
+        return a
 
     def Step(self, iteration):
 
@@ -248,7 +248,7 @@ class Agent(object):
         else:
             a = self.model.GetAction(s)
 
-        reward = env.Act(env.MapActions(a), frame_repeat)
+        reward = env.Act(a, frame_repeat)
         self.rewards += reward
 
         isterminal = not env.IsRunning()
