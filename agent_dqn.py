@@ -165,7 +165,7 @@ class Model(object):
         self.q = tf.contrib.layers.fully_connected(fc1, num_outputs=actions_count, activation_fn=None)
         self.action = tf.argmax(self.q, 1)
 
-        self.loss = tf.losses.mean_squared_error(self.q, self.q_)
+        self.loss = tf.losses.mean_squared_error(self.q_, self.q)
 
         self.optimizer = tf.train.RMSPropOptimizer(learning_rate)
         self.train_step = self.optimizer.minimize(self.loss)

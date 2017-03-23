@@ -1,15 +1,15 @@
 ### Reinforcement learning in 3D
-<br>
+
 Implemented DQN [3] and A3C [4] algorithm for ViZDoom [1] and DeepMind Lab [2] environments.
 
-<br>
+
 Small network on small screen resolution trained relatively fast on simple maps:
 * DQN on 1 GPU: ~ 5 minutes on ViZDoom map *simpler_basic*.
 * DQN on 1 GPU: ~ 5 hours on DeepMind Lab map *seekavoid_arena_01*.
 * A3C on 1 CPU, 3 threads: ~13 minutes on ViZDoom map *simpler_basic*.
 * A3C on 1 GPU, 3 workers: ~8 minutes on ViZDoom map *simpler_basic*.
 
-<br>
+
 _**DQN, ViZDoom map simpler_basic**_
 
 [![ViZDoom map simpler_basic](http://i.imgur.com/zInpPnW.png)](https://youtu.be/mgY-G8rl9O4)
@@ -18,7 +18,7 @@ _**DQN, DeepMind Lab map seekavoid_arena_01**_
 
 [![ViZDoom map simpler_basic](http://i.imgur.com/nDLoaNW.png)](https://youtu.be/G41s4FQPIX4)
 
-<br>
+
 ### Dependencies
 
 * numpy
